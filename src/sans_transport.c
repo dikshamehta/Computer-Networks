@@ -14,6 +14,8 @@ typedef struct connection_rudp_t {
 
 extern connection_rudp_t connection_rudp;
 
+void enqueue_packet(int sock, rudp_packet_t* pkt, int len);
+
 //handling Timeout
 static int configure_socket_timeout(int socket, long timeout_sec, long timeout_usec) {
     struct timeval timeout = {
@@ -65,23 +67,16 @@ int sans_send_pkt(int socket, const char* buf, int len) {
         size_t curr_seq_num = connection_rudp.seq_num + i;
         data_packet.seqnum = curr_seq_num;
 
-        //handlign the last packet which might not be full
+        //handlign the tail packet which might not be full
         if (i == total_full_packets) {
             if (len % SIZE_OF_PAYLOAD == 0) break; // If all the packet were of full size
-            size_of_payload = len % SIZE_OF_PAYLOAD;  // last packet which might not be full
+            size_of_payload = len % SIZE_OF_PAYLOAD;  // tail packet which might not be full
         }
         memcpy(data_packet.payload, buf + buffer_offset, size_of_payload);
 
-        rudp_packet_t ack_pkt;
-        while (1) {
-            if (helper_send_packet(socket, &data_packet) < 0) return -1;
-
-            int ack_res = helper_receive_packet(socket, &ack_pkt);
-            if (ack_res > 0 && ack_pkt.type == ACK && ack_pkt.seqnum == curr_seq_num) {
-                connection_rudp.seq_num = curr_seq_num + 1;
-                break;
-            }
-        }
+//        rudp_packet_t ack_pkt;
+        enqueue_packet(socket, &data_packet, sizeof(data_packet));
+        connection_rudp.seq_num +=1;
     }
 
     return len;
@@ -106,10 +101,10 @@ int sans_recv_pkt(int socket, char* buf, int len) {
 
         size_t real_seq_num = connection_rudp.seq_num + i;
 
-        //handlign the last packet which might not be full
+        //handlign the tail packet which might not be full
         if (i == total_full_packets) {
             if (len % SIZE_OF_PAYLOAD == 0) break; // If all the packet were of full size
-            size_of_payload = len % SIZE_OF_PAYLOAD;  // last packet which might not be full
+            size_of_payload = len % SIZE_OF_PAYLOAD;  // tail packet which might not be full
         }
 
         while (1) {
